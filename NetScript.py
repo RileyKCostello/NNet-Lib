@@ -44,8 +44,10 @@ class layer:
     def adjust(self):
         for ix, iy in np.ndindex(self.weights.shape):
             self.weights[ix, iy] -= self.weightAdjust[ix, iy]
+            self.weightAdjust[ix,iy] = 0
         for ix, iy in np.ndindex(self.biases.shape):
             self.biases[ix,iy] -= self.biasAdjust[ix,iy]
+            self.biasAdjust[ix,iy] = 0
         return
 
 
@@ -111,15 +113,18 @@ class network:
     #Calculates the adjusts for weights and biases
     #Returns dervatives of the cost in terms of the neurons
     def backProp(self, a, nextLayer):
-        thisLayer = [0] * a.numNeurons
-        #Iterate weights matrix finding the derivative in terms of cost function
-        for n, w in np.ndindex(a.weights.shape):
-            a.weightAdjust[n, w] = self.learnRate * a.neurons[0,n] * a.derivs[w] * nextLayer[w] * (1/self.batchSize)
-            #Calculate new nextLayer
-            thisLayer[n] += a.weights[n,w] * a.derivs[w] * nextLayer[w]
-        #Iterate biases and update nextLayer?
+        #Find weight adjustment
+        m1 = np.asmatrix(np.vstack(np.asarray(a.neurons)[0]))
+        m2 = np.asmatrix(a.derivs * nextLayer)
+        toAdd = m1 * m2 # Matrix multiply to get the derivatives
+        toAdd = toAdd * (self.learnRate/ self.batchSize) #Create the array that will be added to weightAdjust
+        a.weightAdjust += toAdd
+        #Find the derivative of neurons in this layer
+        thisLayer = np.asarray(m2 * np.rot90(a.weights))[0]
+        #Find Bias Adjustment
         for x, b in np.ndindex(a.biases.shape):
-            a.biasAdjust[x, b] = self.learnRate * a.derivs[b] * nextLayer[b] * (1/self.batchSize)
+            #print(nextLayer[b])
+            a.biasAdjust[x, b] += self.learnRate * a.derivs[b] * nextLayer[b] * (1/self.batchSize)
         return thisLayer
 
     def updateLayers(self):
