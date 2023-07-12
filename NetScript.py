@@ -3,9 +3,10 @@ import random
 
 class layer:
 
-    def __init__(self, numNeurons, numWeights):
+    def __init__(self, numNeurons, numWeights, sigmoid = False):
         self.numNeurons = numNeurons
         self.numWeights = numWeights
+        self.useSigmoid = sigmoid
         self.neurons = np.asmatrix(np.zeros(numNeurons))
         self.weights = np.asmatrix(np.zeros((numNeurons,numWeights)))
         self.biases = np.asmatrix(np.zeros((numWeights)))
@@ -16,7 +17,7 @@ class layer:
         self.derivs = []
         return
 
-    #randomize every weight and bias as float between -2 and 2
+    #randomize every weight and bias as float between -1 and 1
     def rand(self):
         for ix, iy in np.ndindex(self.weights.shape):
             self.weights[ix,iy] = random.uniform(-2,2)
@@ -25,46 +26,58 @@ class layer:
 
     def next(self):
         output = self.neurons * self.weights
+        #Check if matrices can be added without iteration
         for ix, iy in np.ndindex(output.shape):
             output[ix,iy] += self.biases[ix,iy]
         self.setDerivs(output)
+        if self.useSigmoid:
+            for ix, iy in np.ndindex(output.shape):
+                output[ix,iy] = sigmoid(output[ix,iy])
+            return output
         output = np.tanh(output)
         return output
         
     def setNeurons(self, values):
         self.neurons = np.asmatrix(values)
 
-    #saves the derivatives of the tanh function for easy access in backProp
+    #saves the derivatives of the squish function for easy access in backProp
     def setDerivs(self, a):
+        if self.useSigmoid:
+            self.derivs = np.asarray(a)[0]
+            self.derivs = []
+            for v in np.asarray(a)[0]:
+                self.derivs.append(sigmoid(v) * (1-sigmoid(v)))
+            self.derivs = np.asarray(self.derivs)
+            return
         self.derivs = np.asarray(a)[0]
-        self.derivs = np.cosh(self.derivs)**2
-        self.derivs = 1/self.derivs
+        self.derivs = np.cosh(self.derivs)
+        self.derivs = (1/self.derivs) ** 2
 
-    #Updates the weights and biases by adding with weight.adjust and bias.adjust
+    #Updates the weights and biases
     def adjust(self):
-        for ix, iy in np.ndindex(self.weights.shape):
-            self.weights[ix, iy] -= self.weightAdjust[ix, iy]
-            self.weightAdjust[ix,iy] = 0
-        for ix, iy in np.ndindex(self.biases.shape):
-            self.biases[ix,iy] -= self.biasAdjust[ix,iy]
-            self.biasAdjust[ix,iy] = 0
+        self.weights -= self.weightAdjust
+        self.biases -= self.biasAdjust
         return
 
+def sigmoid(x):
+    return 1/(1+np.exp(-x))
 
+    
 #Network initialized with an array or list
 #Length determines the number of layers
 #Elements determine number of neurons
 class network:
-    def __init__(self, initList, batchSize, learnRate, random = True):
+    def __init__(self, initList, batchSize, learnRate, sigmoid = False, random = True):
         self.cost = 0
         self.size = len(initList)
         self.layers = []
         self.outputs = []
         self.batchSize = batchSize
         self.learnRate = learnRate
+        self.sigmoid = sigmoid
         i = 0
         while i < self.size - 1:
-            self.layers.append(layer(initList[i], initList[i+1]))
+            self.layers.append(layer(initList[i], initList[i+1], sigmoid))
             if random:
                 self.layers[i].rand()
             i += 1
@@ -84,6 +97,9 @@ class network:
             i += 1
         for ix, iy in np.ndindex(a.shape):
             self.outputs.append(a[ix,iy])
+            #Reduces small outputs to 0
+            if a[ix,iy] < 0.01 and self.sigmoid:
+                self.outputs[-1] = 0
 
     #Takes the expected outputs as a list and calculates the cost
     def getCost(self, answers):
@@ -123,7 +139,6 @@ class network:
         thisLayer = np.asarray(m2 * np.rot90(a.weights))[0]
         #Find Bias Adjustment
         for x, b in np.ndindex(a.biases.shape):
-            #print(nextLayer[b])
             a.biasAdjust[x, b] += self.learnRate * a.derivs[b] * nextLayer[b] * (1/self.batchSize)
         return thisLayer
 
