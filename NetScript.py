@@ -3,7 +3,8 @@ import random
 
 class layer:
 
-    def __init__(self, numNeurons, numWeights, sigmoid = False):
+    def __init__(self, numNeurons, numWeights, af = 0):
+        self.af = af
         self.numNeurons = numNeurons
         self.numWeights = numWeights
         self.useSigmoid = sigmoid
@@ -24,17 +25,12 @@ class layer:
         for ix, iy in np.ndindex(self.biases.shape):
             self.biases[ix,iy] = random.uniform(-2,2)
 
+
     def next(self):
         output = self.neurons * self.weights
-        #Check if matrices can be added without iteration
-        for ix, iy in np.ndindex(output.shape):
-            output[ix,iy] += self.biases[ix,iy]
+        output += self.biases
         self.setDerivs(output)
-        if self.useSigmoid:
-            for ix, iy in np.ndindex(output.shape):
-                output[ix,iy] = sigmoid(output[ix,iy])
-            return output
-        output = np.tanh(output)
+        output = self.actFunc(output)
         return output
         
     def setNeurons(self, values):
@@ -42,42 +38,77 @@ class layer:
 
     #saves the derivatives of the squish function for easy access in backProp
     def setDerivs(self, a):
-        if self.useSigmoid:
-            self.derivs = np.asarray(a)[0]
-            self.derivs = []
-            for v in np.asarray(a)[0]:
-                self.derivs.append(sigmoid(v) * (1-sigmoid(v)))
-            self.derivs = np.asarray(self.derivs)
-            return
-        self.derivs = np.asarray(a)[0]
-        self.derivs = np.cosh(self.derivs)
-        self.derivs = (1/self.derivs) ** 2
+        self.derivs = self.afDeriv(np.asarray(a)[0])
 
     #Updates the weights and biases
     def adjust(self):
         self.weights -= self.weightAdjust
         self.biases -= self.biasAdjust
+        #May be slow?
+        self.weightAdjust[:] = 0
+        self.biasAdjust[:] = 0
         return
 
+    def actFunc(self, x):
+        #tanh
+        if self.af == 0:
+            return np.tanh(x)
+        #sigmoid
+        if self.af == 1:
+            for ix, iy in np.ndindex(x.shape):
+                x[ix,iy] = sigmoid(x[ix,iy])
+            return x
+        #ReLu
+        for ix, iy in np.ndindex(x.shape):
+            x[ix,iy] = max(0, x[ix,iy])
+            return x
+
+    def afDeriv(self, x):
+        output = [0] * len(x)
+        #tanh
+        if self.af == 0:
+            x = np.cosh(x)
+            x = (1/x) ** 2
+            return x
+        #sigmoid
+        if self.af == 1:
+            for i,v in enumerate(x):
+                output[i] = sigmoid(v) * (1-sigmoid(v))
+            return np.asarray(output)
+        #ReLu
+        for i,v in enumerate(x):
+            output[i] = 0
+            if v > 0:
+                output[i] = 1
+        output = np.asarray(output)
+        return output
+
 def sigmoid(x):
+    if x < -500:
+        return 0
     return 1/(1+np.exp(-x))
 
     
 #Network initialized with an array or list
 #Length determines the number of layers
 #Elements determine number of neurons
+'''af is the activation function used
+0: tanh
+1: sigmoid
+2: ReLu
+'''
 class network:
-    def __init__(self, initList, batchSize, learnRate, sigmoid = False, random = True):
+    def __init__(self, initList, batchSize, learnRate, af = 0, random = True):
+        self.af = af
         self.cost = 0
         self.size = len(initList)
         self.layers = []
         self.outputs = []
         self.batchSize = batchSize
         self.learnRate = learnRate
-        self.sigmoid = sigmoid
         i = 0
         while i < self.size - 1:
-            self.layers.append(layer(initList[i], initList[i+1], sigmoid))
+            self.layers.append(layer(initList[i], initList[i+1], af))
             if random:
                 self.layers[i].rand()
             i += 1
@@ -98,7 +129,7 @@ class network:
         for ix, iy in np.ndindex(a.shape):
             self.outputs.append(a[ix,iy])
             #Reduces small outputs to 0
-            if a[ix,iy] < 0.01 and self.sigmoid:
+            if a[ix,iy] < 0.01 and self.af == 1:
                 self.outputs[-1] = 0
 
     #Takes the expected outputs as a list and calculates the cost
@@ -125,6 +156,18 @@ class network:
         while i > -1:
             nextLayer = self.backProp(self.layers[i], nextLayer)
             i -= 1
+
+    def setRelu(self):
+        self.af = 2
+        for a in layers:
+            a.af = 2
+        return
+
+    def setSigmoid(self):
+        self.af = 1
+        for a in layers:
+            a.af = 1
+        return
     
     #Calculates the adjusts for weights and biases
     #Returns dervatives of the cost in terms of the neurons
