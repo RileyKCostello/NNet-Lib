@@ -18,7 +18,7 @@ class layer:
         self.derivs = []
         return
 
-    #randomize every weight and bias as float between -1 and 1
+    #randomize every weight and bias
     def rand(self):
         for ix, iy in np.ndindex(self.weights.shape):
             self.weights[ix,iy] = random.uniform(-2,2)
@@ -61,7 +61,7 @@ class layer:
         #ReLu
         for ix, iy in np.ndindex(x.shape):
             x[ix,iy] = max(0, x[ix,iy])
-            return x
+        return x
 
     def afDeriv(self, x):
         output = [0] * len(x)
