@@ -18,12 +18,12 @@ class layer:
         self.derivs = []
         return
 
-    #randomize every weight and bias
+    #randomize every weight and bias as float between -1 and 1
     def rand(self):
         for ix, iy in np.ndindex(self.weights.shape):
-            self.weights[ix,iy] = random.uniform(-2,2)
+            self.weights[ix,iy] = random.uniform(-1,1)
         for ix, iy in np.ndindex(self.biases.shape):
-            self.biases[ix,iy] = random.uniform(-2,2)
+            self.biases[ix,iy] = random.uniform(-1,1)
 
 
     def next(self):
@@ -59,9 +59,15 @@ class layer:
                 x[ix,iy] = sigmoid(x[ix,iy])
             return x
         #ReLu
-        for ix, iy in np.ndindex(x.shape):
-            x[ix,iy] = max(0, x[ix,iy])
-        return x
+        if self.af == 2:
+            for ix, iy in np.ndindex(x.shape):
+                x[ix,iy] = max(0, x[ix,iy])
+            return x
+        #Softmax
+        if self.af == 3:
+            a = np.asarray(x)[0]
+            a = np.clip(a, -500, 500)
+            return np.asmatrix(np.exp(a)/np.sum(np.exp(a)))
 
     def afDeriv(self, x):
         output = [0] * len(x)
@@ -76,12 +82,28 @@ class layer:
                 output[i] = sigmoid(v) * (1-sigmoid(v))
             return np.asarray(output)
         #ReLu
-        for i,v in enumerate(x):
-            output[i] = 0
-            if v > 0:
-                output[i] = 1
-        output = np.asarray(output)
-        return output
+        if self.af == 2:
+            for i,v in enumerate(x):
+                output[i] = 0
+                if v > 0:
+                    output[i] = 1
+            return np.asarray(output)
+        #Softmax
+        if self.af == 3:
+            output = [0] * len(x)
+            x = np.asarray(x)
+            x = np.clip(x, -500, 500)
+            smax = np.exp(x)/np.sum(np.exp(x)).tolist()
+            for i, v in enumerate(smax):
+                j = 0
+                while j < len(output):
+                    if j == i:
+                        output[j] += v * (1-v)
+                    else:
+                        output[j] += v * smax[j]
+                    j += 1
+            return np.asarray(output)
+            
 
 def sigmoid(x):
     if x < -500:
@@ -96,9 +118,12 @@ def sigmoid(x):
 0: tanh
 1: sigmoid
 2: ReLu
+3: Softmax (last layer only)
 '''
 class network:
-    def __init__(self, initList, batchSize, learnRate, af = 0, random = True):
+    def __init__(self, initList, batchSize, learnRate, af = 0, determ = True):
+        if determ:
+            random.seed(1426436)
         self.af = af
         self.cost = 0
         self.size = len(initList)
@@ -128,9 +153,7 @@ class network:
             i += 1
         for ix, iy in np.ndindex(a.shape):
             self.outputs.append(a[ix,iy])
-            #Reduces small outputs to 0
-            if a[ix,iy] < 0.01 and self.af == 1:
-                self.outputs[-1] = 0
+            self.outputs[-1] = round(self.outputs[-1], 5)
 
     #Takes the expected outputs as a list and calculates the cost
     def getCost(self, answers):
@@ -168,6 +191,9 @@ class network:
         for a in layers:
             a.af = 1
         return
+
+    def setSoftmax(self):
+        self.layers[-1].af = 3
     
     #Calculates the adjusts for weights and biases
     #Returns dervatives of the cost in terms of the neurons
@@ -176,7 +202,7 @@ class network:
         m1 = np.asmatrix(np.vstack(np.asarray(a.neurons)[0]))
         m2 = np.asmatrix(a.derivs * nextLayer)
         toAdd = m1 * m2 # Matrix multiply to get the derivatives
-        toAdd = toAdd * (self.learnRate/ self.batchSize) #Create the array that will be added to weightAdjust
+        toAdd = toAdd * (self.learnRate/ self.batchSize) #Array will be added to weightAdjust
         a.weightAdjust += toAdd
         #Find the derivative of neurons in this layer
         thisLayer = np.asarray(m2 * np.rot90(a.weights))[0]
